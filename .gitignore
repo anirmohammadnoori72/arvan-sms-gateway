@@ -1,0 +1,20 @@
+cat <<EOL > .gitignore
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Build and cache
+bin/
+tmp/
+*.log
+
+# IDE files
+.idea/
+.vscode/
+*.iml
+
+# Go modules cache
+vendor/
+EOL

@@ -1,0 +1,91 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: sms-postgres
+    restart: always
+    environment:
+      POSTGRES_USER: sms_user
+      POSTGRES_PASSWORD: sms_pass
+      POSTGRES_DB: sms_gateway
+    ports:
+      - "5432:5432"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 512M
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./migrations:/docker-entrypoint-initdb.d
+
+  redis:
+    image: redis:7-alpine
+    container_name: sms-redis
+    restart: always
+    ports:
+      - "6379:6379"
+    command: ["redis-server", "--appendonly", "yes"]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 128M
+
+  zookeeper:
+    image: bitnami/zookeeper:3.9
+    container_name: sms-zookeeper
+    restart: always
+    environment:
+      ALLOW_ANONYMOUS_LOGIN: "yes"
+    ports:
+      - "2181:2181"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.3'
+          memory: 256M
+
+  kafka:
+    image: bitnami/kafka:3.5
+    container_name: sms-kafka
+    restart: always
+    environment:
+      KAFKA_CFG_NODE_ID: 0
+      KAFKA_CFG_PROCESS_ROLES: broker,controller
+      KAFKA_CFG_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CFG_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093
+      KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://sms-kafka:9092
+      KAFKA_CFG_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,CONTROLLER:PLAINTEXT
+      KAFKA_CFG_CONTROLLER_QUORUM_VOTERS: 0@sms-kafka:9093
+      ALLOW_PLAINTEXT_LISTENER: "yes"
+      KAFKA_CFG_AUTO_CREATE_TOPICS_ENABLE: "true"
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    deploy:
+      resources:
+        limits:
+          cpus: '0.7'
+          memory: 1G
+
+  kafka-topics-init:
+    image: bitnami/kafka:3.5
+    container_name: sms-kafka-topics
+    depends_on:
+      - kafka
+    environment:
+      KAFKA_CFG_LISTENERS: PLAINTEXT://sms-kafka:9092
+    entrypoint: ["/bin/bash", "-c"]
+    command: >
+      "
+      sleep 20 &&
+      /opt/bitnami/kafka/bin/kafka-topics.sh --create --topic wallet-requests --partitions 1 --replication-factor 1 --if-not-exists --bootstrap-server sms-kafka:9092 &&
+      /opt/bitnami/kafka/bin/kafka-topics.sh --create --topic sms-messages --partitions 1 --replication-factor 1 --if-not-exists --bootstrap-server sms-kafka:9092
+      "
+    restart: "no"
+
+volumes:
+  pgdata:

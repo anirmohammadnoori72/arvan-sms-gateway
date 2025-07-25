@@ -1,0 +1,131 @@
+basePath: /
+definitions:
+  models.SMSRequest:
+    properties:
+      message:
+        type: string
+      message_id:
+        type: string
+      phone_number:
+        type: string
+      user_id:
+        type: string
+    type: object
+info:
+  contact: {}
+  description: API for sending SMS messages (Gateway Service).
+  title: Arvan SMS Gateway API
+  version: "1.0"
+paths:
+  /balance/{user_id}:
+    get:
+      description: Retrieve the current wallet balance for a given user ID.
+      parameters:
+      - description: User ID
+        in: path
+        name: user_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Balance retrieved successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid user ID
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: User not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get User Balance
+      tags:
+      - Wallet
+  /message-status/{message_id}:
+    get:
+      description: Retrieve the delivery status of a previously submitted SMS by its
+        Message ID.
+      parameters:
+      - description: Message ID
+        in: path
+        name: message_id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Status retrieved successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid message ID
+          schema:
+            additionalProperties: true
+            type: object
+        "404":
+          description: Message not found
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get Message Status
+      tags:
+      - Messages
+  /send-sms:
+    post:
+      consumes:
+      - application/json
+      description: Queue an SMS for delivery (via Kafka). Validates user, balance,
+        phone number, and message size.
+      parameters:
+      - description: SMS Request
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/models.SMSRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Message queued successfully
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Invalid request, insufficient balance, invalid phone, or duplicate
+            message ID
+          schema:
+            additionalProperties: true
+            type: object
+        "429":
+          description: Server busy, try again later
+          schema:
+            additionalProperties: true
+            type: object
+        "500":
+          description: Internal server error
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Send SMS
+      tags:
+      - SMS
+swagger: "2.0"
