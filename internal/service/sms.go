@@ -32,7 +32,7 @@ func ProcessSMSRequest(req models.SMSRequest, cfg *config.Config) (*ServiceResul
 
 	if err := db.InsertMessage(req, "queued"); err != nil {
 		logger.Error("Failed to insert message", zap.Error(err))
-		return &ServiceResult{StatusCode: http.StatusInternalServerError, Message: "db error"}, err
+		return &ServiceResult{StatusCode: http.StatusInternalServerError, Message: "duplicate message"}, err //TODO fixed it handel error
 	}
 
 	userData, err := GetUserData(req.UserID)

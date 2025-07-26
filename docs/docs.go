@@ -150,7 +150,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Invalid request, insufficient balance, invalid phone, or duplicate message ID",
+                        "description": "Invalid request, invalid UUID, phone, or message size",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
