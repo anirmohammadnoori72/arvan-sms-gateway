@@ -175,3 +175,53 @@ Mitigation strategies:
 
 ## License
 MIT License.
+
+
+---
+
+## Example Usage (Test Users)
+
+The database includes two predefined test users (inserted via migrations):
+
+- **VIP User**  
+  `user_id = 11111111-1111-1111-1111-111111111111`  
+  Balance: `10,000,000`  
+  `is_vip = TRUE`
+
+- **Normal User**  
+  `user_id = 22222222-2222-2222-2222-222222222222`  
+  Balance: `10,000,000`  
+  `is_vip = FALSE`
+
+### Example API Calls
+
+#### Send SMS (VIP User)
+```bash
+curl -X POST http://localhost:8081/send-sms   -H "Content-Type: application/json"   -d '{
+    "message_id": "31111111-1111-1111-1111-111111111111",
+    "user_id": "11111111-1111-1111-1111-111111111111",
+    "phone_number": "+989121234567",
+    "message": "Hello VIP!"
+  }'
+```
+
+#### Send SMS (Normal User)
+```bash
+curl -X POST http://localhost:8081/send-sms   -H "Content-Type: application/json"   -d '{
+    "message_id": "32222222-2222-2222-2222-222222222222",
+    "user_id": "22222222-2222-2222-2222-222222222222",
+    "phone_number": "+989121234568",
+    "message": "Hello Normal!"
+  }'
+```
+
+#### Check Balance (VIP User)
+```bash
+curl -X GET http://localhost:8081/balance/11111111-1111-1111-1111-111111111111
+```
+
+#### Check Balance (Normal User)
+```bash
+curl -X GET http://localhost:8081/balance/22222222-2222-2222-2222-222222222222
+```
+
