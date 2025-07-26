@@ -35,7 +35,7 @@ paths:
             additionalProperties: true
             type: object
         "400":
-          description: Invalid user ID
+          description: Invalid user ID format
           schema:
             additionalProperties: true
             type: object
@@ -71,7 +71,7 @@ paths:
             additionalProperties: true
             type: object
         "400":
-          description: Invalid message ID
+          description: Invalid message ID format
           schema:
             additionalProperties: true
             type: object

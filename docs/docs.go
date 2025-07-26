@@ -43,7 +43,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Invalid user ID",
+                        "description": "Invalid user ID format",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
@@ -94,7 +94,7 @@ const docTemplate = `{
                         }
                     },
                     "400": {
-                        "description": "Invalid message ID",
+                        "description": "Invalid message ID format",
                         "schema": {
                             "type": "object",
                             "additionalProperties": true
