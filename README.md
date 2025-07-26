@@ -1,4 +1,3 @@
-
 # Arvan SMS Gateway
 
 Arvan SMS Gateway is a scalable, production-grade service designed to handle **100 million SMS messages per day (~1200 messages per second)**.  
@@ -9,14 +8,17 @@ It focuses on **availability, consistency, and flexibility** using technologies 
 ## Features
 
 - **High Throughput**: Handles large-scale traffic with Kafka as a message broker.
-- **VIP/OTP Optimization**: Prioritizes critical messages using dedicated VIP topics.
+- **VIP/OTP Optimization**: Dedicated `sms-vip` topic for high-priority traffic, separate from `sms-normal`.
+- **UUID Enforcement**:
+  - Both **`message_id`** and **`user_id`** must be valid **UUIDs**.
+  - Duplicate `message_id` will result in a `400 Bad Request`.
 - **Configurable Processing**:
-  - Sync balance checks for instant consistency.
-  - Async balance checks for burst traffic resilience.
-- **Wallet Reservation (Optional)**:
-  - Uses Redis for reserving tokens to reduce Postgres lock contention.
-  - Can be disabled for stricter consistency.
+  - Sync balance checks for strict consistency.
+  - Async reservation via Redis for burst load resilience.
 - **Horizontally Scalable**:
+  - **Two Workers**:
+    - **Normal Worker**: consumes `sms-normal`.
+    - **VIP Worker**: consumes `sms-vip`.
   - Gateway Pods and Worker Pods can scale independently.
 - **Swagger-Documented APIs**:
   - `/send-sms`
@@ -29,23 +31,23 @@ It focuses on **availability, consistency, and flexibility** using technologies 
 
 1. **Gateway Pods (Top Layer)**:
    - Receive API calls.
-   - Validate and log messages.
-   - Perform balance checks (via Postgres or Redis Reservation).
-   - Push messages to Kafka (Normal or VIP Topic).
+   - Validate `UUID`s, phone number, and message size.
+   - Check balance (via Postgres or Redis Reservation).
+   - Push to Kafka (`sms-normal` or `sms-vip`).
 
 2. **Kafka (Middle Layer)**:
-   - Acts as a buffer for decoupling producers and consumers.
+   - Acts as a buffer between producers and consumers.
    - Two topics:
-     - Normal Topic (Standard traffic).
-     - VIP/Express Topic (Priority traffic).
+     - **Normal Topic (`sms-normal`)**: standard traffic.
+     - **VIP Topic (`sms-vip`)**: critical/priority traffic.
 
 3. **Worker Pods (Bottom Layer)**:
-   - Consume messages from Kafka.
-   - Send SMS via external provider (mocked).
-   - Update message status in Postgres.
-   - For VIP, balance deduction can be **Sync or Async**.
+   - **Normal Worker**: consumes from `sms-normal`.
+   - **VIP Worker**: consumes from `sms-vip`.
+   - Sends SMS via external provider (mocked).
+   - Updates message status in Postgres.
 
-4. **Postgres & Redis (Right Side)**:
+4. **Postgres & Redis (Data Layer)**:
    - **Postgres**: Source of Truth for wallets, reservations, and message logs.
    - **Redis**: Optional caching/reservation layer for high-load scenarios.
 
@@ -74,7 +76,13 @@ It focuses on **availability, consistency, and flexibility** using technologies 
    go run cmd/server/main.go
    ```
 
-3. Access Swagger UI:
+3. Start workers:
+   ```bash
+   go run cmd/worker-normal/main.go
+   go run cmd/worker-vip/main.go
+   ```
+
+4. Access Swagger UI:
    ```
    http://localhost:8081/swagger/index.html
    ```
@@ -94,34 +102,74 @@ It focuses on **availability, consistency, and flexibility** using technologies 
     "message": "Hello, World!"
   }
   ```
+- Requirements:
+  - Both `message_id` and `user_id` must be **valid UUIDs**.
+  - `message_id` must be unique (duplicates cause `400 Bad Request`).
+  - Phone number must be valid (minimum 10 digits).
+  - Message must not be empty (max 500 characters).
 - Responses:
   - `200 OK`: `{"status":"pending","message_id":"uuid"}`
-  - `400 Bad Request`: Invalid phone, duplicate message ID, or insufficient balance.
+  - `400 Bad Request`: Invalid UUID, phone, or duplicate `message_id`.
   - `500 Internal Server Error`: Server or Kafka issue.
 
 ### Check Balance
 - **GET** `/balance/{user_id}`
+- Requirements:
+  - `user_id` must be a valid UUID.
 - Responses:
-  - `200 OK`: `{"balance":1000}`
-  - `400 Bad Request`: Invalid user ID.
-  - `500 Internal Server Error`: DB issues.
+  - `200 OK`: `{"user_id":"...","balance":1000}`
+  - `400 Bad Request`: Invalid UUID format.
+  - `404 Not Found`: User not found.
+  - `500 Internal Server Error`: Database issues.
 
 ### Check Message Status
 - **GET** `/message-status/{message_id}`
+- Requirements:
+  - `message_id` must be a valid UUID.
 - Responses:
-  - `200 OK`: `{"status":"pending|sent|failed|rejected"}`
-  - `400 Bad Request`: Invalid message ID.
-  - `500 Internal Server Error`: DB issues.
+  - `200 OK`: `{"message_id":"...","status":"pending|sent|failed|rejected"}`
+  - `400 Bad Request`: Invalid UUID format.
+  - `404 Not Found`: Message not found.
+  - `500 Internal Server Error`: Database issues.
+
+---
+
+## Config (Environment Variables)
+
+The service reads configuration from environment variables.  
+Defaults are provided for local development.
+
+```go
+type Config struct {
+    ServerPort          string // API server port
+    ServiceName         string
+    KafkaBrokers        string
+    KafkaTopicNormal    string // "sms-normal"
+    KafkaTopicVIP       string // "sms-vip"
+    DBHost              string
+    DBPort              string
+    DBUser              string
+    DBPassword          string
+    DBName              string
+    DeveloperMode       string
+    ServerMetricsPort   string // ":9090" for Prometheus metrics
+    DBUrl               string
+    RedisAddr           string
+    BatchSize           int64  // wallet batch operations
+    ReservationTTL      int64  // TTL for Redis reservation (seconds)
+    UseRedisReservation bool   // enable or disable Redis reservations
+}
+```
 
 ---
 
 ## Scaling Considerations
 
-While the system scales horizontally via pods, **Postgres may become a bottleneck** under extreme growth.  
-Possible solutions:
-- Implement **logical sharding** by customer.
-- Use **NewSQL / distributed SQL databases** (CockroachDB, Yugabyte).
-- Cache-heavy read paths via Redis for non-critical reads.
+While the system scales horizontally via pods, **Postgres may become a bottleneck** at extreme scale.  
+Mitigation strategies:
+- Implement **logical sharding** (per customer or region).
+- Move to **distributed SQL databases** like CockroachDB or Yugabyte.
+- Use Redis to cache read-heavy paths for non-critical lookups.
 
 ---
 
