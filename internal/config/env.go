@@ -33,7 +33,8 @@ type Config struct {
 	ServerPort          string
 	ServiceName         string
 	KafkaBrokers        string
-	KafkaTopic          string
+	KafkaTopicNormal    string
+	KafkaTopicVIP       string
 	DBHost              string
 	DBPort              string
 	DBUser              string
@@ -43,12 +44,9 @@ type Config struct {
 	ServerMetricsPort   string
 	DBUrl               string
 	RedisAddr           string
-	WalletTopic         string
-	SMSTopic            string
 	BatchSize           int64
 	ReservationTTL      int64 // seconds
 	UseRedisReservation bool
-	KafkaVIPTopic       string
 }
 
 func LoadEnv() *Config {
@@ -56,7 +54,8 @@ func LoadEnv() *Config {
 		ServerPort:          getEnv("SERVER_PORT", "8081"),
 		ServiceName:         getEnv("SERVICE_NAME", "arvan-sms-gateway"),
 		KafkaBrokers:        getEnv("KAFKA_BROKERS", "127.0.0.1:9092"),
-		KafkaTopic:          getEnv("KAFKA_TOPIC", "sms-messages"),
+		KafkaTopicNormal:    getEnv("KAFKA_TOPIC_NORMAL", "sms-normal"),
+		KafkaTopicVIP:       getEnv("KAFKA_TOPIC_VIP", "sms-vip"),
 		DBHost:              getEnv("DB_HOST", "localhost"),
 		DBPort:              getEnv("DB_PORT", "5432"),
 		DBUser:              getEnv("DB_USER", "postgres"),
@@ -66,11 +65,8 @@ func LoadEnv() *Config {
 		ServerMetricsPort:   getEnv("SERVER_METRICS_PORT", "9090"),
 		DBUrl:               getEnv("DB_URL", "postgres://sms_user:sms_pass@localhost:5432/sms_gateway?sslmode=disable"),
 		RedisAddr:           getEnv("REDIS_ADDR", "127.0.0.1:6379"),
-		WalletTopic:         getEnv("KAFKA_WALLET_TOPIC", "wallet-requests"),
-		SMSTopic:            getEnv("KAFKA_SMS_TOPIC", "sms-messages"),
 		BatchSize:           getEnvInt64("WALLET_BATCH_SIZE", 100),
 		ReservationTTL:      getEnvInt64("WALLET_RESERVATION_TTL", 30),
 		UseRedisReservation: getEnv("USE_REDIS_RESERVATION", "false") == "true",
-		KafkaVIPTopic:       getEnv("KAFKA_TOPIC", "sms-messages"),
 	}
 }

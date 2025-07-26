@@ -82,8 +82,8 @@ services:
     command: >
       "
       sleep 20 &&
-      /opt/bitnami/kafka/bin/kafka-topics.sh --create --topic wallet-requests --partitions 1 --replication-factor 1 --if-not-exists --bootstrap-server sms-kafka:9092 &&
-      /opt/bitnami/kafka/bin/kafka-topics.sh --create --topic sms-messages --partitions 1 --replication-factor 1 --if-not-exists --bootstrap-server sms-kafka:9092
+      /opt/bitnami/kafka/bin/kafka-topics.sh --create --topic sms-normal --partitions 1 --replication-factor 1 --if-not-exists --bootstrap-server sms-kafka:9092 &&
+      /opt/bitnami/kafka/bin/kafka-topics.sh --create --topic sms-vip --partitions 1 --replication-factor 1 --if-not-exists --bootstrap-server sms-kafka:9092
       "
     restart: "no"
 

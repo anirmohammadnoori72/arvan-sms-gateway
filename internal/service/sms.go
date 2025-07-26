@@ -41,9 +41,9 @@ func ProcessSMSRequest(req models.SMSRequest, cfg *config.Config) (*ServiceResul
 		return &ServiceResult{StatusCode: http.StatusInternalServerError, Message: "user fetch error"}, err
 	}
 
-	topic := cfg.KafkaTopic
+	topic := cfg.KafkaTopicNormal
 	if userData.IsVIP {
-		topic = cfg.KafkaVIPTopic
+		topic = cfg.KafkaTopicVIP
 	} else {
 		_, ok, err := reserverService.Reserve(req.UserID, 1)
 		if err != nil {

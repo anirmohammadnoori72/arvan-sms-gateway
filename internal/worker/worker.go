@@ -3,6 +3,7 @@ package worker
 import (
 	"arvan-sms-gateway/internal/db"
 	"arvan-sms-gateway/internal/logger"
+	"arvan-sms-gateway/internal/metrics"
 	"arvan-sms-gateway/internal/models"
 	"context"
 	"encoding/json"
@@ -25,6 +26,7 @@ func StartWorker(brokers []string, topic, group string, isVIP bool) {
 	config.Version = sarama.V2_5_0_0
 	config.Consumer.Group.Rebalance.Strategy = sarama.BalanceStrategyRoundRobin
 	config.Consumer.Offsets.Initial = sarama.OffsetOldest
+	config.Consumer.Offsets.AutoCommit.Enable = false
 
 	cg, err := sarama.NewConsumerGroup(brokers, group, config)
 	if err != nil {
@@ -45,26 +47,44 @@ func StartWorker(brokers []string, topic, group string, isVIP bool) {
 
 	handler := &consumer{isVIP: isVIP}
 
+	logger.Info("Worker started",
+		zap.String("topic", topic),
+		zap.String("group", group),
+		zap.Bool("isVIP", isVIP))
+
 	for {
 		if err := cg.Consume(ctx, []string{topic}, handler); err != nil {
-			logger.Error("Error from consumer", zap.Error(err))
+			logger.Error("Kafka consume error", zap.Error(err))
 			time.Sleep(2 * time.Second)
 		}
 		if ctx.Err() != nil {
+			logger.Warn("Worker context canceled, shutting down")
 			return
 		}
 	}
 }
 
-func (c *consumer) Setup(sarama.ConsumerGroupSession) error   { return nil }
-func (c *consumer) Cleanup(sarama.ConsumerGroupSession) error { return nil }
+func (c *consumer) Setup(sarama.ConsumerGroupSession) error {
+	logger.Info("Kafka consumer setup complete")
+	return nil
+}
+func (c *consumer) Cleanup(sarama.ConsumerGroupSession) error {
+	logger.Info("Kafka consumer cleanup complete")
+	return nil
+}
 
 func (c *consumer) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.ConsumerGroupClaim) error {
 	for msg := range claim.Messages() {
+		logger.Info("Received Kafka message",
+			zap.String("topic", claim.Topic()),
+			zap.Int32("partition", msg.Partition),
+			zap.Int64("offset", msg.Offset))
+
 		var req models.SMSRequest
 		if err := json.Unmarshal(msg.Value, &req); err != nil {
-			logger.Error("Invalid message", zap.Error(err))
+			logger.Error("Invalid Kafka message payload", zap.Error(err))
 			sess.MarkMessage(msg, "")
+			metrics.KafkaErrors.Inc()
 			continue
 		}
 
@@ -73,83 +93,57 @@ func (c *consumer) ConsumeClaim(sess sarama.ConsumerGroupSession, claim sarama.C
 		} else {
 			handleNormal(req)
 		}
+
+		metrics.KafkaMessages.Inc()
+		metrics.QueueLength.Dec()
+
 		sess.MarkMessage(msg, "")
+		sess.Commit()
 	}
 	return nil
 }
-
 func handleVIP(req models.SMSRequest) {
+	logger.Info("Processing VIP SMS",
+		zap.String("message_id", req.MessageID),
+		zap.String("user_id", req.UserID),
+		zap.String("phone_number", req.PhoneNumber))
+
 	sent := sendSMS(req.PhoneNumber, req.Message)
 	if !sent {
 		db.UpdateMessageStatus(req.MessageID, "failed")
+		logger.Warn("VIP SMS failed", zap.String("message_id", req.MessageID))
+		metrics.KafkaErrors.Inc()
 		return
 	}
 
-	tx, err := db.DB.Begin()
-	if err != nil {
-		db.UpdateMessageStatus(req.MessageID, "error")
-		return
-	}
-	defer tx.Rollback()
-
-	var balance int64
-	err = tx.QueryRow(`SELECT balance FROM users WHERE id=$1 FOR UPDATE`, req.UserID).Scan(&balance)
-	if err != nil {
-		db.UpdateMessageStatus(req.MessageID, "error")
-		return
-	}
-
-	newBalance := balance - smsCost
-	_, err = tx.Exec(`UPDATE users SET balance=$1 WHERE id=$2`, newBalance, req.UserID)
-	if err != nil {
-		db.UpdateMessageStatus(req.MessageID, "error")
-		return
-	}
-
-	if err := tx.Commit(); err != nil {
+	if err := db.DeductBalance(req.UserID, smsCost); err != nil {
+		logger.Error("Failed to deduct balance", zap.Error(err))
 		db.UpdateMessageStatus(req.MessageID, "error")
 		return
 	}
 
 	db.UpdateMessageStatus(req.MessageID, "sent")
+	logger.Info("VIP SMS sent successfully", zap.String("message_id", req.MessageID))
+	metrics.TotalSMSRequests.Inc()
 }
 
 func handleNormal(req models.SMSRequest) {
-	tx, err := db.DB.Begin()
-	if err != nil {
-		db.UpdateMessageStatus(req.MessageID, "error")
-		return
-	}
-	defer tx.Rollback()
+	logger.Info("Processing Normal SMS",
+		zap.String("message_id", req.MessageID),
+		zap.String("user_id", req.UserID),
+		zap.String("phone_number", req.PhoneNumber))
 
-	var balance int64
-	err = tx.QueryRow(`SELECT balance FROM users WHERE id=$1 FOR UPDATE`, req.UserID).Scan(&balance)
-	if err != nil {
-		db.UpdateMessageStatus(req.MessageID, "error")
-		return
-	}
-
-	if balance < smsCost {
-		db.UpdateMessageStatus(req.MessageID, "rejected")
-		return
-	}
-
-	_, err = tx.Exec(`UPDATE users SET balance=balance-$1 WHERE id=$2`, smsCost, req.UserID)
-	if err != nil {
-		db.UpdateMessageStatus(req.MessageID, "error")
-		return
-	}
-
-	if err := tx.Commit(); err != nil {
-		db.UpdateMessageStatus(req.MessageID, "error")
-		return
-	}
-
+	// TODO: Reservation handling (MarkUsed or Rollback)
 	sent := sendSMS(req.PhoneNumber, req.Message)
+
 	if sent {
 		db.UpdateMessageStatus(req.MessageID, "sent")
+		logger.Info("Normal SMS sent successfully", zap.String("message_id", req.MessageID))
+		metrics.TotalSMSRequests.Inc()
 	} else {
 		db.UpdateMessageStatus(req.MessageID, "failed")
+		logger.Warn("Normal SMS failed", zap.String("message_id", req.MessageID))
+		metrics.KafkaErrors.Inc()
 	}
 }
 

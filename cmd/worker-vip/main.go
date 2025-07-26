@@ -6,6 +6,7 @@ import (
 	"arvan-sms-gateway/internal/logger"
 	"arvan-sms-gateway/internal/worker"
 	"strings"
+	"time"
 )
 
 func main() {
@@ -15,5 +16,6 @@ func main() {
 	db.InitDB(cfg.DBUrl)
 
 	brokers := strings.Split(cfg.KafkaBrokers, ",")
-	worker.StartWorker(brokers, cfg.KafkaVIPTopic, "vip-worker-group", true)
+	groupID := "vip-worker-group-" + time.Now().Format("150405")
+	worker.StartWorker(brokers, cfg.KafkaTopicVIP, groupID, true)
 }
